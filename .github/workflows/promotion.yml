@@ -103,16 +103,12 @@ jobs:
 
           while read SHA
           do
-            echo "================================"
             echo "Cherry-picking $SHA"
-            echo "================================"
 
             set +e
 
             OUTPUT=$(git cherry-pick -m 1 "$SHA" 2>&1)
             STATUS=$?
-
-            echo "$OUTPUT"
 
             set -e
 
@@ -122,9 +118,11 @@ jobs:
 
             else
 
+                echo "$OUTPUT"
+
                 if echo "$OUTPUT" | grep -qi "previous cherry-pick is now empty"; then
 
-                    echo "Empty cherry-pick detected"
+                    echo "Changes already exist. Skipping..."
                     git cherry-pick --skip || true
 
                 else
@@ -135,12 +133,13 @@ jobs:
 
                     git diff --name-only --diff-filter=U || true
 
+                    gh pr comment "${{ github.event.pull_request.number }}" \
+                      --body "❌ Promotion failed because of a merge conflict while cherry-picking commit \`$SHA\`. Conflict file(s): $(git diff --name-only --diff-filter=U | paste -sd ','). Please resolve manually."
+
                     git cherry-pick --abort || true
 
                     exit 1
-
                 fi
-
             fi
 
           done < shas.txt
