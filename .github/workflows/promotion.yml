@@ -136,8 +136,7 @@ jobs:
                     gh pr comment "${{ github.event.pull_request.number }}" \
                       --body "❌ Promotion failed because of a merge conflict while cherry-picking commit \`$SHA\`. Conflict file(s): $(git diff --name-only --diff-filter=U | paste -sd ','). Please resolve manually."
 
-                    git cherry-pick --abort || true
-
+                    git push origin "$PROMO_BRANCH"
                     exit 1
                 fi
             fi
