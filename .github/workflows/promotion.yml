@@ -1,0 +1,28 @@
+name: Batch Promotion
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: promotion-queue
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: >
+      github.event.label.name == 'promote-to-master' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'develop'
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
