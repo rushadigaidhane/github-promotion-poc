@@ -103,28 +103,47 @@ jobs:
 
           while read SHA
           do
+            echo "================================"
             echo "Cherry-picking $SHA"
+            echo "================================"
+
+            set +e
 
             OUTPUT=$(git cherry-pick -m 1 "$SHA" 2>&1)
             STATUS=$?
+
+            echo "$OUTPUT"
+
+            set -e
+
             if [ $STATUS -eq 0 ]; then
-              echo "Successfully applied $SHA"
+
+                echo "Successfully applied $SHA"
+
             else
-              echo "$OUTPUT"
-              if echo "$OUTPUT" | grep -qi "previous cherry-pick is now empty"; then
-                  echo "Changes already exist. Skipping..."
-                  git cherry-pick --skip
-              else
-                  echo "Real conflict detected"
-                  git status
-                  git diff --name-only --diff-filter=U || true
-                  git cherry-pick --abort || true
-                  exit 1
-              fi
+
+                if echo "$OUTPUT" | grep -qi "previous cherry-pick is now empty"; then
+
+                    echo "Empty cherry-pick detected"
+                    git cherry-pick --skip || true
+
+                else
+
+                    echo "Real conflict detected"
+
+                    git status
+
+                    git diff --name-only --diff-filter=U || true
+
+                    git cherry-pick --abort || true
+
+                    exit 1
+
+                fi
+
             fi
 
           done < shas.txt
-
       - name: Push Promotion Branch
         run: |
           git push --set-upstream origin "$PROMO_BRANCH"
