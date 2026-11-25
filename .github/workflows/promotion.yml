@@ -57,7 +57,7 @@ jobs:
               pr.user.login === triggerPR.user.login &&
               pr.labels.some(l => l.name === "queued-for-master") &&
               !pr.labels.some(l => l.name === "promoted-to-master")
-            );
+            ).sort((a, b) => new Date(a.merged_at) - new Date(b.merged_at));
 
             if (!eligible.length) {
               core.setFailed("No eligible PRs found");
@@ -105,26 +105,43 @@ jobs:
           do
             echo "Cherry-picking $SHA"
 
+            set +e
+
             OUTPUT=$(git cherry-pick -m 1 "$SHA" 2>&1)
             STATUS=$?
+
+            set -e
+
             if [ $STATUS -eq 0 ]; then
-              echo "Successfully applied $SHA"
+
+                echo "Successfully applied $SHA"
+
             else
-              echo "$OUTPUT"
-              if echo "$OUTPUT" | grep -qi "previous cherry-pick is now empty"; then
-                  echo "Changes already exist. Skipping..."
-                  git cherry-pick --skip
-              else
-                  echo "Real conflict detected"
-                  git status
-                  git diff --name-only --diff-filter=U || true
-                  git cherry-pick --abort || true
-                  exit 1
-              fi
+
+                echo "$OUTPUT"
+
+                if echo "$OUTPUT" | grep -qi "previous cherry-pick is now empty"; then
+
+                    echo "Changes already exist. Skipping..."
+                    git cherry-pick --skip || true
+
+                else
+
+                    echo "Real conflict detected"
+
+                    git status
+
+                    git diff --name-only --diff-filter=U || true
+
+                    gh pr comment "${{ github.event.pull_request.number }}" \
+                      --body "❌ Promotion failed because of a merge conflict while cherry-picking commit \`$SHA\`. Conflict file(s): $(git diff --name-only --diff-filter=U | paste -sd ','). Please resolve manually."
+
+                    git push origin "$PROMO_BRANCH"
+                    exit 1
+                fi
             fi
 
           done < shas.txt
-
       - name: Push Promotion Branch
         run: |
           git push --set-upstream origin "$PROMO_BRANCH"
