@@ -91,18 +91,24 @@ jobs:
               repos/${{ github.repository }}/issues/$PR/labels/promote-to-master \
               -X DELETE || true
 
-            gh pr edit "$PR" \
-              --add-label "promoted-to-master"
-
+            gh api \
+              repos/${{ github.repository }}/issues/$PR/labels \
+              --method POST \
+              -f labels[]=promoted-to-master
+              
             if [ "${{ github.event_name }}" = "pull_request" ]; then
 
-              gh pr comment "$PR" \
-                --body "✅ Successfully promoted to master through Promotion PR #${{ github.event.pull_request.number }}"
+              gh api \
+                repos/${{ github.repository }}/issues/$PR/comments \
+                --method POST \
+                -f body="✅ Successfully promoted to master through Promotion PR #${{ github.event.pull_request.number }}"
 
             else
 
-              gh pr comment "$PR" \
-                --body "✅ Labels updated manually using Finalize Promotion workflow."
+              gh api \
+                repos/${{ github.repository }}/issues/$PR/comments \
+                --method POST \
+                -f body="✅ Labels updated manually using Finalize Promotion workflow."
 
             fi
 
