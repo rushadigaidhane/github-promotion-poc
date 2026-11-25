@@ -1,0 +1,53 @@
+name: Finalize Promotion
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  finalize:
+
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'master'
+
+    runs-on: ubuntu-latest
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+
+      - name: Extract Source PRs
+        id: extract
+        run: |
+
+          echo "${{ github.event.pull_request.body }}" > body.txt
+
+          SOURCE_PRS=$(grep -oE 'source-prs=[0-9,]+' body.txt | cut -d= -f2)
+
+          echo "SOURCE_PRS=$SOURCE_PRS" >> $GITHUB_ENV
+
+      - name: Update Labels
+        run: |
+
+          for PR in $(echo "$SOURCE_PRS" | tr ',' ' ')
+          do
+
+            gh pr edit "$PR" \
+              --remove-label "queued-for-master" || true
+
+            gh pr edit "$PR" \
+              --remove-label "promote-to-master" || true
+
+            gh pr edit "$PR" \
+              --add-label "promoted-to-master"
+
+            gh pr comment "$PR" \
+              --body "Successfully promoted to master through Promotion PR #${{ github.event.pull_request.number }}"
+
+          done
