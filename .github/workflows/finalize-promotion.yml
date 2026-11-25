@@ -1,19 +1,26 @@
 name: Finalize Promotion
 
 on:
+  workflow_dispatch:
+
   pull_request:
-    types: [closed]
+    types:
+      - closed
 
 permissions:
   pull-requests: write
   issues: write
 
 jobs:
+
   finalize:
 
     if: >
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'master'
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.merged == true &&
+        github.event.pull_request.base.ref == 'master'
+      )
 
     runs-on: ubuntu-latest
 
@@ -22,21 +29,59 @@ jobs:
 
     steps:
 
+      - name: Debug PR Body
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          echo "===== PR BODY ====="
+          echo "${{ github.event.pull_request.body }}"
+          echo "==================="
+
       - name: Extract Source PRs
-        id: extract
+        if: github.event_name != 'workflow_dispatch'
         run: |
 
-          echo "${{ github.event.pull_request.body }}" > body.txt
+          BODY='${{ github.event.pull_request.body }}'
 
-          SOURCE_PRS=$(grep -oE 'source-prs=[0-9,]+' body.txt | cut -d= -f2)
+          SOURCE_PRS=$(echo "$BODY" \
+            | grep -oE 'source-prs=[0-9,]+' \
+            | cut -d= -f2)
+
+          echo "SOURCE_PRS=$SOURCE_PRS"
 
           echo "SOURCE_PRS=$SOURCE_PRS" >> $GITHUB_ENV
+
+      - name: Validate Source PRs
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+
+          if [ -z "$SOURCE_PRS" ]; then
+            echo "ERROR: No source PRs found in promotion PR."
+            exit 1
+          fi
+
+      #
+      # Manual cleanup support
+      #
+      - name: Manual Cleanup Setup
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+
+          #
+          # Replace with actual PRs if needed
+          #
+          echo "SOURCE_PRS=11,7,6" >> $GITHUB_ENV
 
       - name: Update Labels
         run: |
 
+          echo "Updating PRs: $SOURCE_PRS"
+
           for PR in $(echo "$SOURCE_PRS" | tr ',' ' ')
           do
+
+            echo "================================"
+            echo "Processing PR #$PR"
+            echo "================================"
 
             gh pr edit "$PR" \
               --remove-label "queued-for-master" || true
@@ -47,7 +92,21 @@ jobs:
             gh pr edit "$PR" \
               --add-label "promoted-to-master"
 
-            gh pr comment "$PR" \
-              --body "Successfully promoted to master through Promotion PR #${{ github.event.pull_request.number }}"
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+
+              gh pr comment "$PR" \
+                --body "✅ Successfully promoted to master through Promotion PR #${{ github.event.pull_request.number }}"
+
+            else
+
+              gh pr comment "$PR" \
+                --body "✅ Labels updated manually using Finalize Promotion workflow."
+
+            fi
 
           done
+
+      - name: Verify Labels Updated
+        run: |
+
+          echo "Processed PRs: $SOURCE_PRS"
