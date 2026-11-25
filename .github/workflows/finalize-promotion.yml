@@ -83,11 +83,13 @@ jobs:
             echo "Processing PR #$PR"
             echo "================================"
 
-            gh pr edit "$PR" \
-              --remove-label "queued-for-master" || true
+            gh api \
+              repos/${{ github.repository }}/issues/$PR/labels/queued-for-master \
+              -X DELETE || true
 
-            gh pr edit "$PR" \
-              --remove-label "promote-to-master" || true
+            gh api \
+              repos/${{ github.repository }}/issues/$PR/labels/promote-to-master \
+              -X DELETE || true
 
             gh pr edit "$PR" \
               --add-label "promoted-to-master"
