@@ -1,0 +1,5 @@
+name: Finalize Promotion
+
+on:
+  pull_request:
+    types: [closed]
