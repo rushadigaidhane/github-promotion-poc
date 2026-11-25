@@ -21,8 +21,136 @@ jobs:
       github.event.pull_request.base.ref == 'develop'
 
     runs-on: ubuntu-latest
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Master
+        uses: actions/checkout@v4
         with:
           ref: master
           fetch-depth: 0
+
+      - name: Discover Eligible PRs
+        id: discover
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            const triggerPR = context.payload.pull_request;
+
+            const prs = await github.paginate(
+              github.rest.pulls.list,
+              {
+                owner,
+                repo,
+                state: "closed",
+                base: "develop",
+                per_page: 100
+              }
+            );
+
+            const eligible = prs.filter(pr =>
+              pr.merged_at &&
+              pr.user.login === triggerPR.user.login &&
+              pr.labels.some(l => l.name === "queued-for-master") &&
+              !pr.labels.some(l => l.name === "promoted-to-master")
+            );
+
+            if (!eligible.length) {
+              core.setFailed("No eligible PRs found");
+              return;
+            }
+
+            core.setOutput(
+              "prs",
+              JSON.stringify(
+                eligible.map(pr => ({
+                  number: pr.number,
+                  title: pr.title,
+                  sha: pr.merge_commit_sha,
+                  url: pr.html_url
+                }))
+              )
+            );
+
+            core.setOutput(
+              "source_prs",
+              eligible.map(x => x.number).join(",")
+            );
+
+      - name: Create Promotion Branch
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          PROMO_BRANCH="promo_qa_$(date +%Y%m%d_%H%M%S)"
+
+          echo "PROMO_BRANCH=$PROMO_BRANCH" >> $GITHUB_ENV
+
+          git fetch origin master
+          git checkout -b "$PROMO_BRANCH" origin/master
+
+      - name: Cherry Pick PRs
+        env:
+          PRS_JSON: ${{ steps.discover.outputs.prs }}
+        run: |
+          echo "$PRS_JSON" > prs.json
+
+          jq -r '.[].sha' prs.json > shas.txt
+
+          while read SHA
+          do
+            echo "Cherry-picking $SHA"
+
+            git cherry-pick -m 1 "$SHA" || {
+              echo "Conflict detected"
+              git cherry-pick --abort
+              exit 1
+            }
+
+          done < shas.txt
+
+      - name: Push Promotion Branch
+        run: |
+          git push --set-upstream origin "$PROMO_BRANCH"
+
+      - name: Create Promotion PR
+        id: createpr
+        env:
+          SOURCE_PRS: ${{ steps.discover.outputs.source_prs }}
+        run: |
+
+          cat > body.md <<EOF
+          ## Automated Promotion
+
+          Included Source PRs
+
+          $(echo "$SOURCE_PRS" | tr ',' '\n' | sed 's/^/- PR #/')
+
+          <!-- source-prs=$SOURCE_PRS -->
+          EOF
+
+          gh pr create \
+            --base master \
+            --head "$PROMO_BRANCH" \
+            --title "[AUTO] Promotion Bundle" \
+            --body-file body.md
+
+      - name: Comment on Source PRs
+        env:
+          SOURCE_PRS: ${{ steps.discover.outputs.source_prs }}
+        run: |
+
+          PROMO_PR=$(gh pr list \
+            --head "$PROMO_BRANCH" \
+            --json number \
+            --jq '.[0].number')
+
+          for PR in $(echo "$SOURCE_PRS" | tr ',' ' ')
+          do
+            gh pr comment $PR \
+              --body "Included in Promotion PR #$PROMO_PR"
+          done
