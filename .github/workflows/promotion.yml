@@ -105,11 +105,23 @@ jobs:
           do
             echo "Cherry-picking $SHA"
 
-            git cherry-pick -m 1 "$SHA" || {
-              echo "Conflict detected"
-              git cherry-pick --abort
-              exit 1
-            }
+            OUTPUT=$(git cherry-pick -m 1 "$SHA" 2>&1)
+            STATUS=$?
+            if [ $STATUS -eq 0 ]; then
+              echo "Successfully applied $SHA"
+            else
+              echo "$OUTPUT"
+              if echo "$OUTPUT" | grep -qi "previous cherry-pick is now empty"; then
+                  echo "Changes already exist. Skipping..."
+                  git cherry-pick --skip
+              else
+                  echo "Real conflict detected"
+                  git status
+                  git diff --name-only --diff-filter=U || true
+                  git cherry-pick --abort || true
+                  exit 1
+              fi
+            fi
 
           done < shas.txt
 
