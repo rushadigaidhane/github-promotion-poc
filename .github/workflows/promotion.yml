@@ -167,6 +167,38 @@ jobs:
             --head "$PROMO_BRANCH" \
             --title "[AUTO] Promotion Bundle" \
             --body-file body.md
+      
+      - name: Update Source PR Labels
+        env:
+          SOURCE_PRS: ${{ steps.discover.outputs.source_prs }}
+        run: |
+
+          echo "Updating PR labels..."
+
+          for PR in $(echo "$SOURCE_PRS" | tr ',' ' ')
+          do
+
+            echo "Processing PR #$PR"
+
+            gh api \
+              repos/${{ github.repository }}/issues/$PR/labels/queued-for-master \
+              -X DELETE || true
+
+            gh api \
+              repos/${{ github.repository }}/issues/$PR/labels/promote-to-master \
+              -X DELETE || true
+
+            gh api \
+              repos/${{ github.repository }}/issues/$PR/labels \
+              --method POST \
+              -f labels[]=promoted-to-master
+
+            gh api \
+              repos/${{ github.repository }}/issues/$PR/comments \
+              --method POST \
+              -f body="✅ Included in auto-generated Promotion PR."
+
+          done
 
       - name: Comment on Source PRs
         env:
@@ -180,6 +212,8 @@ jobs:
 
           for PR in $(echo "$SOURCE_PRS" | tr ',' ' ')
           do
-            gh pr comment $PR \
-              --body "Included in Promotion PR #$PROMO_PR"
+            gh api \
+              repos/${{ github.repository }}/issues/$PR/comments \
+              --method POST \
+              -f body="Included in Promotion PR #$PROMO_PR"
           done
