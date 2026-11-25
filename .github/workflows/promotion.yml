@@ -57,7 +57,7 @@ jobs:
               pr.user.login === triggerPR.user.login &&
               pr.labels.some(l => l.name === "queued-for-master") &&
               !pr.labels.some(l => l.name === "promoted-to-master")
-            );
+            ).sort((a, b) => new Date(a.merged_at) - new Date(b.merged_at));
 
             if (!eligible.length) {
               core.setFailed("No eligible PRs found");
